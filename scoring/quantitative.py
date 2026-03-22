@@ -60,9 +60,9 @@ def score_point_1(income_stmts: list[dict]) -> PointResult:
             data_used={"revenues_found": len(revenues)},
         )
 
-    # income_stmts are newest-first; oldest revenue is last
+    # income_stmts are newest-first; cap window at 5 years
     years = min(len(revenues) - 1, 5)
-    cagr = _cagr(revenues[-1], revenues[0], years)
+    cagr = _cagr(revenues[years], revenues[0], years)  # revenues[years] = exactly `years` ago
 
     if cagr >= REVENUE_CAGR_STRONG:
         score = "strong"
@@ -79,7 +79,7 @@ def score_point_1(income_stmts: list[dict]) -> PointResult:
         score=score, numeric=_score(score),
         rationale=rationale,
         data_used={"revenue_cagr": round(cagr, 4), "years": years,
-                   "start_revenue": revenues[-1], "latest_revenue": revenues[0]},
+                   "start_revenue": revenues[years], "latest_revenue": revenues[0]},
     )
 
 

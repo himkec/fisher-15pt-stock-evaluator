@@ -44,9 +44,9 @@ REVENUE_CAGR_AVERAGE = 0.07   # 7-15% = average; <7% = weak
 MARGIN_PREMIUM_STRONG = 0.10  # >=10pp above sector median = strong
 MARGIN_PREMIUM_AVERAGE = 0.00 # 0-10pp above = average; below = weak
 
-# Point 6 — Operating margin 5yr trend (slope per year in percentage points)
-MARGIN_TREND_STRONG = 0.5     # improving >= 0.5pp/yr = strong
-MARGIN_TREND_AVERAGE = -0.5   # stable ±0.5pp = average; deteriorating = weak
+# Point 6 — Operating margin 5yr trend (slope per year in decimal units, e.g. 0.005 = 0.5pp)
+MARGIN_TREND_STRONG = 0.005   # improving >= 0.5pp/yr = strong
+MARGIN_TREND_AVERAGE = -0.005 # stable ±0.5pp = average; deteriorating = weak
 
 # Point 10 — SG&A / Revenue trend (negative slope = improving cost control)
 SGNA_TREND_STRONG = -0.005    # improving (falling) by >= 0.5pp/yr

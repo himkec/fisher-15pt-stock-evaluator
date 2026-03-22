@@ -15,6 +15,8 @@ from scoring import quantitative as quant
 from scoring import qualitative as qual
 from scoring import aggregator
 from scoring.models import PointResult, EvalSummary
+from scoring.qafp import run_qafp
+from scoring.qafp_models import QAFPResult
 from ui import components
 from config.settings import FMP_DAILY_LIMIT, ANTHROPIC_API_KEY
 
@@ -32,23 +34,60 @@ VERDICT_ICON = {
 
 # ── Persist full evaluation to SQLite ─────────────────────────────────────────
 
-def _save_evaluation(summary: EvalSummary, thesis: str) -> None:
+def _save_evaluation(summary: EvalSummary, thesis: str, qafp: QAFPResult | None) -> None:
     data = summary.to_dict()
     data["thesis"] = thesis
-    cache.set("eval:summary", summary.ticker, data, ttl=60 * 60 * 24 * 30)  # 30 days
+    cache.set("eval:summary", summary.ticker, data, ttl=60 * 60 * 24 * 30)
+    if qafp:
+        cache.save_qafp(summary.ticker, qafp.to_dict())
 
 
-def _load_evaluation(ticker: str) -> tuple[EvalSummary, str] | tuple[None, None]:
+def _load_evaluation(ticker: str) -> tuple[EvalSummary, str, QAFPResult | None]:
     data = cache.get("eval:summary", ticker)
     if not data:
-        return None, None
+        return None, None, None
     thesis = data.pop("thesis", "")
-    return EvalSummary.from_dict(data), thesis
+    qafp_data = cache.load_qafp(ticker)
+    qafp = QAFPResult.from_dict(qafp_data) if qafp_data else None
+
+    # Back-fill QAFP from cached financial data (no new API calls)
+    if qafp is None:
+        qafp = _try_qafp_from_cache(ticker)
+
+    return EvalSummary.from_dict(data), thesis, qafp
+
+
+def _try_qafp_from_cache(ticker: str) -> QAFPResult | None:
+    """Compute QAFP using only already-cached yfinance data — zero new API calls."""
+    try:
+        yf_info      = cache.get("yf:info", ticker)
+        income_stmts = cache.get("yf:income_stmt", ticker)
+        balance_sheets = cache.get("yf:balance_sheet", ticker)
+        cash_flows   = cache.get("yf:cash_flow", ticker)
+
+        # If any required data is missing from cache, fetch it silently
+        if not yf_info:
+            yf_info = fmp_client.get_info(ticker)
+        if not income_stmts:
+            income_stmts = fmp_client.get_income_statements(ticker)
+        if not balance_sheets:
+            balance_sheets = fmp_client.get_balance_sheets(ticker)
+        if not cash_flows:
+            cash_flows = fmp_client.get_cash_flow_statements(ticker)
+
+        if not yf_info or not income_stmts:
+            return None
+
+        qafp = run_qafp(ticker, yf_info, income_stmts, balance_sheets or [], cash_flows or [])
+        cache.save_qafp(ticker, qafp.to_dict())
+        return qafp
+    except Exception:
+        return None
 
 
 # ── Render results (shared between live eval and history load) ─────────────────
 
-def _render(summary: EvalSummary, thesis: str, from_cache: bool = False) -> None:
+def _render(summary: EvalSummary, thesis: str, qafp: QAFPResult | None = None, from_cache: bool = False) -> None:
     if from_cache:
         st.info("Loaded from history — no API calls made.")
     st.divider()
@@ -65,6 +104,9 @@ def _render(summary: EvalSummary, thesis: str, from_cache: bool = False) -> None
         components.radar_chart(summary.results)
 
     components.point_expanders(summary.results)
+
+    if qafp:
+        components.qafp_section(qafp)
 
 
 # ── Full evaluation pipeline ──────────────────────────────────────────────────
@@ -94,6 +136,7 @@ def _run_evaluation(ticker: str) -> None:
         ratios         = fmp_client.get_ratios(ticker)
         key_metrics    = fmp_client.get_key_metrics(ticker)
         peers_ratios   = fmp_client.get_peers_ratios(ticker)
+        yf_info        = fmp_client.get_info(ticker)
     except FMPRateLimitError as e:
         st.error(str(e))
         return
@@ -186,18 +229,30 @@ def _run_evaluation(ticker: str) -> None:
     progress.progress(100, text="Evaluation complete.")
     status.empty()
 
+    # Step 6 — QAFP analysis
+    status.info("Running Quality at a Fair Price (QAFP) analysis...")
+    qafp = None
+    try:
+        qafp = run_qafp(ticker, yf_info, income_stmts, balance_sheets, cash_flows)
+    except Exception as e:
+        errors.append(f"QAFP analysis failed: {e}")
+
+    progress.progress(100, text="Complete.")
+    status.empty()
+
     # Persist to SQLite and session state
-    _save_evaluation(summary, thesis)
+    _save_evaluation(summary, thesis, qafp)
     st.session_state["active_ticker"]  = ticker
     st.session_state["active_summary"] = summary
     st.session_state["active_thesis"]  = thesis
+    st.session_state["active_qafp"]    = qafp
 
     if errors:
         with st.expander("Warnings during evaluation", expanded=False):
             for err in errors:
                 st.warning(err)
 
-    _render(summary, thesis)
+    _render(summary, thesis, qafp)
 
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
@@ -223,11 +278,12 @@ if history:
         caption = entry["company_name"]
 
         if st.sidebar.button(label, key=f"hist_{entry['ticker']}", help=caption, use_container_width=True):
-            summary, thesis = _load_evaluation(entry["ticker"])
+            summary, thesis, qafp = _load_evaluation(entry["ticker"])
             if summary:
                 st.session_state["active_ticker"]  = entry["ticker"]
                 st.session_state["active_summary"] = summary
                 st.session_state["active_thesis"]  = thesis or ""
+                st.session_state["active_qafp"]    = qafp
                 st.rerun()
 else:
     st.sidebar.caption("No stocks analyzed yet. Enter a ticker above and click Analyze.")
@@ -258,11 +314,11 @@ st.markdown(
 if analyze_btn and ticker_input:
     _run_evaluation(ticker_input)
 elif "active_ticker" in st.session_state and st.session_state.get("active_summary"):
-    from_cache = not (analyze_btn and ticker_input)
     _render(
         st.session_state["active_summary"],
         st.session_state.get("active_thesis", ""),
-        from_cache=False,  # already shown banner during load
+        st.session_state.get("active_qafp"),
+        from_cache=False,
     )
 else:
     st.markdown(

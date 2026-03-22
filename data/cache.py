@@ -122,6 +122,14 @@ def make_hash(*parts: str) -> str:
     return hashlib.sha256(combined.encode()).hexdigest()[:16]
 
 
+def save_qafp(ticker: str, qafp_dict: dict) -> None:
+    set("qafp:result", ticker, qafp_dict, ttl=60 * 60 * 24 * 30)
+
+
+def load_qafp(ticker: str) -> dict | None:
+    return get("qafp:result", ticker)
+
+
 def list_analyzed_tickers() -> list[dict]:
     """
     Return all tickers that have a saved full evaluation summary, newest first.

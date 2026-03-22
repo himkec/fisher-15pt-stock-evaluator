@@ -191,6 +191,213 @@ def thesis_box(thesis: str) -> None:
 
 # ── Sidebar API usage ─────────────────────────────────────────────────────────
 
+# ── QAFP components ───────────────────────────────────────────────────────────
+
+QAFP_VERDICT_STYLE = {
+    "BUY / ACCUMULATE": ("success", "✅ BUY / ACCUMULATE"),
+    "WATCHLIST":        ("warning", "⚠️ WATCHLIST"),
+    "AVOID":            ("error",   "❌ AVOID"),
+}
+
+QUALITY_LABEL_COLOR = {
+    "High":          "#27ae60",
+    "Above Average": "#2ecc71",
+    "Average":       "#e67e22",
+    "Low":           "#c0392b",
+}
+
+VALUATION_LABEL_COLOR = {
+    "Cheap":     "#27ae60",
+    "Fair":      "#e67e22",
+    "Expensive": "#c0392b",
+}
+
+
+def qafp_banner(qafp) -> None:
+    from scoring.qafp_models import QAFPResult
+    q: QAFPResult = qafp
+    style, label = QAFP_VERDICT_STYLE.get(q.recommendation, ("info", q.recommendation))
+    ql_color = QUALITY_LABEL_COLOR.get(q.quality_label, "#7f8c8d")
+    vl_color = VALUATION_LABEL_COLOR.get(q.valuation_label, "#7f8c8d")
+
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.metric("Quality Score", f"{q.quality_score:.0f} / 100",
+                  delta=q.quality_label, delta_color="off")
+    with c2:
+        st.metric("Valuation Score", f"{q.valuation_score:.0f} / 100",
+                  delta=q.valuation_label, delta_color="off")
+    with c3:
+        ret_color = "normal" if q.expected_return >= q.required_return else "inverse"
+        st.metric("Expected Return", f"{q.expected_return:.1%}",
+                  delta=f"req. {q.required_return:.0%}", delta_color=ret_color)
+    with c4:
+        getattr(st, style)(f"**{label}**")
+
+    if q.red_flags:
+        flags_md = "\n".join(f"- {f}" for f in q.red_flags)
+        st.warning(f"**Red flags:**\n{flags_md}")
+
+
+def qafp_quality_table(qafp) -> None:
+    from scoring.qafp_models import QAFPResult
+    q: QAFPResult = qafp
+
+    sub_order = ["profitability", "cash_generation", "balance_sheet", "growth"]
+    sub_labels = {
+        "profitability":   "Profitability & Returns",
+        "cash_generation": "Cash Generation",
+        "balance_sheet":   "Balance Sheet",
+        "growth":          "Growth Profile",
+    }
+
+    rows_html = ""
+    for key in sub_order:
+        sub = q.sub_scores.get(key)
+        if not sub:
+            continue
+        color = QUALITY_LABEL_COLOR.get(sub.label, "#7f8c8d")
+        bar_pct = int(sub.score)
+        rows_html += (
+            f'<tr>'
+            f'<td style="padding:7px 10px">{sub_labels[key]}</td>'
+            f'<td style="text-align:center;padding:7px 8px;color:{color};font-weight:600">'
+            f'{sub.label}</td>'
+            f'<td style="padding:7px 12px;min-width:110px">'
+            f'<div style="background:rgba(255,255,255,0.08);border-radius:4px;height:9px">'
+            f'<div style="background:{color};width:{bar_pct}%;height:100%;border-radius:4px"></div>'
+            f'</div></td>'
+            f'<td style="text-align:right;padding:7px 10px;color:#aaa">{sub.score:.0f}</td>'
+            f'</tr>'
+        )
+
+    html = f"""
+    <table class="fisher-table" style="width:100%">
+      <thead><tr>
+        <th>Sub-pillar</th>
+        <th style="text-align:center">Rating</th>
+        <th>Score bar</th>
+        <th style="text-align:right">/ 100</th>
+      </tr></thead>
+      <tbody>{rows_html}</tbody>
+    </table>"""
+    st.markdown(html, unsafe_allow_html=True)
+
+    # Sub-score expanders with notes
+    for key in sub_order:
+        sub = q.sub_scores.get(key)
+        if not sub:
+            continue
+        color = QUALITY_LABEL_COLOR.get(sub.label, "#7f8c8d")
+        with st.expander(f"{sub_labels[key]}  [{sub.label}]", expanded=False):
+            if sub.notes:
+                for n in sub.notes:
+                    st.markdown(f"- {n}")
+            if sub.metrics:
+                st.json({k: (f"{v:.1%}" if isinstance(v, float) and abs(v) < 10 else v)
+                         for k, v in sub.metrics.items() if not isinstance(v, list)})
+
+
+def qafp_valuation_table(qafp) -> None:
+    from scoring.qafp_models import QAFPResult
+    q: QAFPResult = qafp
+    vm = q.valuation_metrics
+
+    def _fmt(val, pct=False, mult=False):
+        if val == 0 or val is None:
+            return "N/A"
+        if pct:
+            return f"{val:.1%}"
+        if mult:
+            return f"{val:.1f}x"
+        if abs(val) >= 1e9:
+            return f"${val/1e9:.1f}B"
+        if abs(val) >= 1e6:
+            return f"${val/1e6:.0f}M"
+        return str(round(val, 2))
+
+    rows = [
+        ("P/E (TTM)",         _fmt(vm.get("pe_ttm"), mult=True)),
+        ("P/E (Forward)",     _fmt(vm.get("pe_forward"), mult=True)),
+        ("EV/EBITDA",         _fmt(vm.get("ev_ebitda"), mult=True)),
+        ("Price/Sales",       _fmt(vm.get("price_to_sales"), mult=True)),
+        ("Price/Book",        _fmt(vm.get("price_to_book"), mult=True)),
+        ("FCF Yield",         _fmt(vm.get("fcf_yield"), pct=True)),
+        ("PEG Ratio",         _fmt(vm.get("peg_ratio"), mult=True)),
+        ("Market Cap",        _fmt(vm.get("market_cap"))),
+        ("Enterprise Value",  _fmt(vm.get("enterprise_value"))),
+        ("Expected Return",   _fmt(vm.get("expected_return"), pct=True)),
+        ("Required Return",   _fmt(vm.get("required_return"), pct=True)),
+    ]
+
+    rows_html = "".join(
+        f'<tr><td style="padding:6px 10px;color:#bbb">{label}</td>'
+        f'<td style="padding:6px 10px;text-align:right;font-weight:600">{val}</td></tr>'
+        for label, val in rows
+    )
+    html = f"""
+    <table class="fisher-table" style="width:100%">
+      <thead><tr>
+        <th>Metric</th><th style="text-align:right">Value</th>
+      </tr></thead>
+      <tbody>{rows_html}</tbody>
+    </table>"""
+    st.markdown(html, unsafe_allow_html=True)
+
+
+def qafp_section(qafp) -> None:
+    """Full QAFP section rendered below Fisher evaluation."""
+    st.divider()
+    st.markdown("## Quality at a Fair Price (QAFP) Analysis")
+    qafp_banner(qafp)
+
+    col_left, col_right = st.columns([1, 1])
+    with col_left:
+        st.markdown("#### Quality Breakdown")
+        qafp_quality_table(qafp)
+    with col_right:
+        st.markdown("#### Valuation Metrics")
+        qafp_valuation_table(qafp)
+
+    # Key metrics table
+    st.markdown("#### Key Metrics Summary")
+    km = qafp.key_metrics
+    metrics_html = f"""
+    <table class="fisher-table" style="width:100%">
+      <thead><tr>
+        <th>Metric</th><th style="text-align:right">Value</th>
+        <th>Metric</th><th style="text-align:right">Value</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td style="padding:6px 10px;color:#bbb">Return on Equity</td>
+          <td style="padding:6px 10px;text-align:right;font-weight:600">{km.get('roe', 0):.1%}</td>
+          <td style="padding:6px 10px;color:#bbb">FCF Margin (avg)</td>
+          <td style="padding:6px 10px;text-align:right;font-weight:600">{km.get('fcf_margin', 0):.1%}</td>
+        </tr>
+        <tr>
+          <td style="padding:6px 10px;color:#bbb">Operating Margin</td>
+          <td style="padding:6px 10px;text-align:right;font-weight:600">{km.get('operating_margin', 0):.1%}</td>
+          <td style="padding:6px 10px;color:#bbb">FCF CAGR (5yr)</td>
+          <td style="padding:6px 10px;text-align:right;font-weight:600">{km.get('fcf_cagr', 0):.1%}</td>
+        </tr>
+        <tr>
+          <td style="padding:6px 10px;color:#bbb">Net Margin</td>
+          <td style="padding:6px 10px;text-align:right;font-weight:600">{km.get('net_margin', 0):.1%}</td>
+          <td style="padding:6px 10px;color:#bbb">Revenue CAGR (5yr)</td>
+          <td style="padding:6px 10px;text-align:right;font-weight:600">{km.get('revenue_cagr', 0):.1%}</td>
+        </tr>
+        <tr>
+          <td style="padding:6px 10px;color:#bbb">Debt / Equity</td>
+          <td style="padding:6px 10px;text-align:right;font-weight:600">{km.get('debt_to_equity', 0):.2f}x</td>
+          <td style="padding:6px 10px;color:#bbb">Net Debt / EBITDA</td>
+          <td style="padding:6px 10px;text-align:right;font-weight:600">{km.get('net_debt_ebitda', 0):.1f}x</td>
+        </tr>
+      </tbody>
+    </table>"""
+    st.markdown(metrics_html, unsafe_allow_html=True)
+
+
 def api_usage_sidebar(fmp_count: int, fmp_limit: int, ticker: str) -> None:
     st.sidebar.markdown("---")
     st.sidebar.markdown("**Cache / API**")

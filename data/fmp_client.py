@@ -214,6 +214,22 @@ def get_peers_ratios(ticker: str) -> list[dict]:
     return []
 
 
+def get_info(ticker: str) -> dict:
+    """
+    Full yfinance info dict — used by QAFP for valuation metrics,
+    ROE, margins, EV, market cap, P/E, D/E, FCF, etc.
+    """
+    cached = cache.get("yf:info", ticker)
+    if cached:
+        return cached
+
+    t = _get_ticker(ticker)
+    info = t.info or {}
+    cache.set("yf:info", ticker, info, ttl=CACHE_TTL_SECONDS)
+    cache.log_request("fmp", "info", ticker)
+    return info
+
+
 def request_count_today() -> int:
     """Proxy to cache counter — kept for sidebar display compatibility."""
     from data.cache import request_count_today as _count
