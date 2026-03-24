@@ -1,47 +1,64 @@
 # Fisher 15-Point Stock Evaluator
 
-A practical implementation of Philip Fisher's 15-point checklist for evaluating high-quality growth companies — with real-time data, AI-powered qualitative scoring, a Quality at a Fair Price (QAFP) valuation layer, and an interactive Streamlit dashboard.
+A multi-framework stock analysis platform built with Streamlit. Combines Philip Fisher's 15-point checklist, QAFP quality scoring, CAN SLIM momentum analysis, deep fundamental analysis, intrinsic value models, top-down sector analysis, and a rules-based quality screener — all backed by free data sources (Yahoo Finance, SEC EDGAR) and Claude AI for qualitative scoring.
 
 ---
 
-## What it does
+## Pages
 
-Enter any US stock ticker and get two complementary evaluations:
+### 📊 Stock Evaluator (`app.py`)
 
-### 1. Fisher 15-Point Checklist
+Enter any US ticker and run one or more analysis frameworks:
 
-| Points | Method | Data source |
-|--------|--------|-------------|
-| 1, 5, 6, 10, 13 | Rule-based quantitative scoring | Yahoo Finance (free) |
-| 2, 3, 4, 7–9, 11–12, 14–15 | Claude AI reads SEC filings | SEC EDGAR (free) + Anthropic Claude API |
+| Framework | What it does | Verdict |
+|-----------|-------------|---------|
+| **Fisher 15-Point** | AI reads SEC filings + quantitative scoring | BUY / WATCHLIST / PASS |
+| **QAFP** | Quality at a Fair Price — profitability, FCF, balance sheet, valuation | BUY / ACCUMULATE / WATCHLIST / AVOID |
+| **CAN SLIM** | O'Neil momentum — earnings acceleration, RS, institutional buying | BUY / WATCH / AVOID |
+| **Fundamental Analysis** | Deep dive: margins, returns, growth, leverage, efficiency | — |
+| **Intrinsic Value** | FCF DCF (Bear/Base/Bull), DDM, Residual Income, Graham Number — football field chart | — |
 
-Results include a **BUY / WATCHLIST / PASS** verdict, scorecard table, radar chart, per-point rationale, and an AI-generated investment thesis.
+**Investor style presets** auto-select the right frameworks (Long-Term Growth, QAFP, Momentum, Deep Value, Income, Full Due Diligence). Previously analyzed stocks are saved and reloadable from the sidebar at zero API cost.
 
-### 2. Quality at a Fair Price (QAFP) Analysis
+---
 
-A second evaluation framework that scores the stock on two dimensions:
+### 🏭 Sector Analysis (`pages/sector_analysis.py`)
 
-**Quality score** (0–100) — weighted average of four sub-pillars:
+Top-down, single-page drill-down:
 
-| Sub-pillar | Weight | Key metrics |
-|-----------|--------|-------------|
-| Profitability | 30% | ROE, operating margin, 5yr margin trend |
-| Cash generation | 30% | FCF margin, FCF CAGR, consistency |
-| Balance sheet | 20% | Debt/Equity, Net Debt/EBITDA |
-| Growth | 20% | Revenue CAGR, analyst growth estimate |
+1. **All 11 GICS sectors** ranked by annualised return (SPDR ETF proxies) — bar chart + rankings table
+2. **Click a sector card** → see top-10 stocks by total return + subsector breakdown below
+3. **Click a subsector** → stock universe with scatter plot + fundamentals table
+4. **"Analyze →"** on any stock — inline picker with preset bundles (Full DD, Growth, Value, Momentum) → switches to Stock Evaluator with ticker and analyses pre-filled
 
-**Valuation score** (0–100) — based on P/E, EV/EBITDA, FCF yield, and PEG ratio.
+Configurable: lookback period (3Y / 5Y), top-N sectors and subsectors, minimum market cap. All data cached 24h.
 
-**QAFP verdict:**
+---
 
-| Verdict | Condition |
-|---------|-----------|
-| BUY | Quality ≥ 70 and Valuation ≥ 60 |
-| ACCUMULATE | Quality ≥ 70 and Valuation 40–60 |
-| WATCHLIST | Quality 50–70 |
-| AVOID | Quality < 50 or critical red flags |
+### 🔍 Screening (`pages/screening.py`)
 
-Previously analyzed stocks are saved and reloadable from the sidebar at **zero API cost**.
+Rules-based screens to narrow the investment universe before deep analysis.
+
+#### Quality-First Fundamental Screen *(live)*
+
+Five sequential filter steps per the requirements spec:
+
+| Step | Filter | Default threshold |
+|------|--------|-------------------|
+| 1 | Universe | S&P 500, market cap ≥ $1B |
+| 2 | Profitability | ROIC ≥ 15%, op margin ≥ 10%, FCF margin ≥ 10%, FCF positive ≥ 4/5 years |
+| 3 | Balance sheet | Net Debt/EBITDA ≤ 3×, interest coverage ≥ 3.5×, share dilution ≤ 15% over 5Y |
+| 4 | Earnings quality | CFO/NI ≥ 70% cumulative, EPS growth volatility in bottom 70% |
+| 5 | Scoring | Percentile-ranked composite (ROIC 25%, FCF margin 20%, op margin 15%, leverage 20%, stability 10%, cash conversion 10%) |
+
+Results: funnel chart, step summary, ranked table with quality score bars, one-click "Analyze →" to Stock Evaluator.
+All thresholds configurable from the sidebar. Screen results cached 24h. Sector filter reduces runtime from ~20 min (full S&P 500) to 2–5 min.
+
+#### Coming soon
+- CAN SLIM Momentum Screen
+- Value / Deep-Value Screen
+- GARP Screen
+- Dividend Growth Screen
 
 ---
 
@@ -50,7 +67,7 @@ Previously analyzed stocks are saved and reloadable from the sidebar at **zero A
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/your-username/fisher-15pt-stock-evaluator.git
+git clone https://github.com/himkec/fisher-15pt-stock-evaluator.git
 cd fisher-15pt-stock-evaluator
 pip install -r requirements.txt
 ```
@@ -68,9 +85,9 @@ ANTHROPIC_API_KEY=your_anthropic_key_here
 EDGAR_USER_AGENT=FisherEvaluator/1.0 your@email.com
 ```
 
-- **Anthropic API key** — required for qualitative scoring (points 2, 3, 4, 7–9, 11–12, 14–15). Get one at [console.anthropic.com](https://console.anthropic.com).
-- **Yahoo Finance** — free, no key needed (quantitative points and QAFP metrics).
-- **SEC EDGAR** — free, no key needed. Set your email in `EDGAR_USER_AGENT` as required by EDGAR's fair-use policy.
+- **Anthropic API key** — required for Fisher qualitative scoring (points 2, 3, 4, 7–9, 11–12, 14–15). Get one at [console.anthropic.com](https://console.anthropic.com).
+- **Yahoo Finance** — free, no key needed.
+- **SEC EDGAR** — free, no key needed. Set your email in `EDGAR_USER_AGENT` per EDGAR's fair-use policy.
 
 ### 3. Run
 
@@ -78,7 +95,7 @@ EDGAR_USER_AGENT=FisherEvaluator/1.0 your@email.com
 streamlit run app.py --server.headless true --server.port 8502
 ```
 
-Open **http://localhost:8502** in your browser.
+Open **http://localhost:8502** in your browser. Streamlit auto-discovers `pages/` and adds navigation.
 
 ---
 
@@ -86,111 +103,143 @@ Open **http://localhost:8502** in your browser.
 
 ```
 fisher-15pt-stock-evaluator/
-├── app.py                     # Streamlit entry point + pipeline orchestration
+├── app.py                          # Stock Evaluator page + full pipeline
+├── pages/
+│   ├── sector_analysis.py          # Sector Analysis page (7-epic top-down framework)
+│   └── screening.py                # Screening page (multi-strategy screener)
 ├── config/
-│   └── settings.py            # All constants, thresholds, API URLs
+│   └── settings.py                 # All thresholds, TTLs, API config
 ├── data/
-│   ├── cache.py               # SQLite cache (24hr TTL, 30-day eval history)
-│   ├── fmp_client.py          # Yahoo Finance wrapper (via yfinance)
-│   └── edgar_client.py        # SEC EDGAR: CIK, filings, XBRL, full-text search
+│   ├── cache.py                    # SQLite cache with per-entry TTL
+│   ├── fmp_client.py               # Yahoo Finance wrapper (via yfinance)
+│   └── edgar_client.py             # SEC EDGAR: CIK, filings, XBRL, full-text search
 ├── scoring/
-│   ├── models.py              # PointResult + EvalSummary dataclasses
-│   ├── quantitative.py        # Rule-based scoring for points 1, 5, 6, 10, 13
-│   ├── qualitative.py         # Claude AI scoring for points 2, 3, 4, 7–9, 11–12, 14–15
-│   ├── prompts.py             # All Claude prompt templates and scoring rubrics
-│   ├── aggregator.py          # Score aggregation + BUY/WATCHLIST/PASS verdict
-│   ├── qafp.py                # QAFP quality + valuation engine
-│   └── qafp_models.py         # QAFPResult + SubScore dataclasses
+│   ├── models.py                   # PointResult, EvalSummary
+│   ├── quantitative.py             # Fisher points 1, 5, 6, 10, 13 (rule-based)
+│   ├── qualitative.py              # Fisher points 2, 3, 4, 7–9, 11–12, 14–15 (Claude AI)
+│   ├── prompts.py                  # Claude prompt templates and scoring rubrics
+│   ├── aggregator.py               # Score aggregation + verdict
+│   ├── qafp.py / qafp_models.py    # QAFP quality + valuation engine
+│   ├── canslim.py / canslim_models.py  # CAN SLIM letter scoring
+│   ├── fundamental.py / fundamental_models.py  # Deep fundamental analysis
+│   └── intrinsic_value.py / intrinsic_value_models.py  # DCF, DDM, RIM, Graham
+├── sector_analysis/
+│   ├── taxonomy.py                 # GICS sectors, ETF tickers, constants
+│   ├── data_client.py              # ETF + stock price downloads, S&P 500 universe
+│   ├── engine.py                   # Sector, subsector, and top-stock runners
+│   ├── metrics.py                  # Return, volatility, Sharpe, drawdown calculations
+│   └── models.py                   # AnalysisConfig, SectorResult, SubsectorResult, StockItem
+├── screening/
+│   ├── models.py                   # QualityScreenConfig, StockScreenMetrics, QualityScreenResult
+│   └── quality_screen.py           # 5-step quality filter + percentile scoring engine
 ├── ui/
-│   └── components.py          # Streamlit widgets: scorecard, radar, QAFP section
-├── tests/
-│   ├── test_quantitative.py   # 68 tests for Fisher quantitative scoring
-│   └── test_qafp.py           # 67 tests for QAFP engine
-└── docs/
-    ├── Philip-Fisher-15-Point-Checklist-Pseudo-Code.md
-    ├── Quality-Analysis.md
-    └── Technical-Implementation-Options.md
+│   └── components.py               # All Streamlit UI components
+└── tests/
+    ├── test_quantitative.py        # 68 tests — Fisher quantitative scoring
+    ├── test_qafp.py                # 67 tests — QAFP engine
+    ├── test_canslim.py             # CAN SLIM scoring tests
+    └── test_intrinsic_value.py     # 85 tests — all 5 valuation methods
 ```
 
-### Data flow
+### Data flow — Stock Evaluator
 
 ```
-User enters ticker
-  → Yahoo Finance   → revenue, margins, cash flows, shares (Fisher points 1, 5, 6, 10, 13)
-  → SEC EDGAR       → 10-K text, proxy (DEF 14A), XBRL facts, full-text search hits
-  → Claude API      → reads filings, scores qualitative points 2, 3, 4, 7–9, 11–12, 14–15
-  → Aggregator      → total score, ratio, BUY / WATCHLIST / PASS verdict
-  → QAFP engine     → quality sub-scores, valuation metrics, BUY/ACCUMULATE/WATCHLIST/AVOID verdict
-  → SQLite cache    → saved for 30 days; reload from sidebar at zero cost
+User enters ticker + selects frameworks
+  → Yahoo Finance   → income statements, balance sheets, cash flows, price history
+  → SEC EDGAR       → 10-K text, proxy (DEF 14A), XBRL facts, full-text search
+  → Claude API      → qualitative scoring for Fisher points 2, 3, 4, 7–9, 11–12, 14–15
+  → Scoring engines → Fisher aggregator, QAFP, CAN SLIM, Fundamental, Intrinsic Value
+  → SQLite cache    → all results saved; sidebar reload at zero cost
+```
+
+### Data flow — Sector Analysis
+
+```
+Run Sector Analysis
+  → yfinance batch download → 11 SPDR ETF + SPY price history
+  → Sector engine           → annualised return, volatility, Sharpe, max DD per sector
+  → Click sector            → download all S&P 500 stocks in sector
+                            → top-10 by total return (with fundamentals)
+                            → equal-weighted subsector performance groups
+  → Click subsector         → stock universe with per-stock fundamentals
+  → Click Analyze →         → prefills Stock Evaluator with ticker + chosen frameworks
+```
+
+### Data flow — Quality Screen
+
+```
+Run Quality Screen (sector or full S&P 500)
+  → S&P 500 universe (Wikipedia, cached 7 days)
+  → Per-stock: income statements + balance sheets + cash flows (cached 24h each)
+  → Step 2: profitability filter  (ROIC, op margin, FCF margin, FCF consistency)
+  → Step 3: balance sheet filter  (leverage, interest coverage, dilution)
+  → Step 4: earnings quality      (CFO/NI ratio, EPS growth volatility)
+  → Step 5: percentile scoring    → composite quality score → ranked table
+  → Screen result cached 24h per config combination
 ```
 
 ---
 
-## Caching and costs
+## Caching
 
-| Action | API calls | Claude tokens |
-|--------|-----------|---------------|
-| First evaluation of a ticker | ~7 Yahoo Finance + ~5 EDGAR | ~10 Claude calls (~$0.05–0.15) |
-| Repeat evaluation (within 24hr) | 0 | 0 |
-| Load from history (sidebar) | 0 | 0 |
+All results stored in `~/.fisher_cache/cache.db` (SQLite).
 
-All results are stored in a local SQLite database at `~/.fisher_cache/cache.db`.
-
-History panel: previously analyzed stocks appear in the sidebar with verdict icon, score percentage, and analysis date. Click any entry to reload instantly — no API calls, no Claude tokens.
+| Data type | TTL |
+|-----------|-----|
+| Yahoo Finance financials | 24 hours |
+| SEC filings | 1 year (immutable) |
+| Claude qualitative scores | 7 days |
+| Full evaluation summaries | 30 days |
+| Sector ETF prices | 24 hours |
+| S&P 500 constituent list | 7 days |
+| Quality screen results | 24 hours |
 
 ---
 
 ## The 15 Fisher Points
 
-| # | Point | Scoring method |
-|---|-------|---------------|
-| 1 | Growth potential of products/services | 5-year revenue CAGR |
-| 2 | Ongoing innovation drive | Claude on 10-K + R&D trend |
-| 3 | Effectiveness of R&D | Claude on 10-K + XBRL R&D data |
-| 4 | Quality of sales organization | Claude on 10-K + revenue/employee |
+| # | Point | Method |
+|---|-------|--------|
+| 1 | Growth potential | 5-year revenue CAGR |
+| 2 | Innovation drive | Claude on 10-K + R&D trend |
+| 3 | R&D effectiveness | Claude on 10-K + XBRL R&D data |
+| 4 | Sales organisation | Claude on 10-K + revenue/employee |
 | 5 | Profit margin level | Gross margin vs sector peers |
-| 6 | Margin stability and improvement | 5-year operating margin slope |
-| 7 | Labor and personnel relations | Claude on 10-K Human Capital + EDGAR search |
+| 6 | Margin stability | 5-year operating margin slope |
+| 7 | Labour relations | Claude on 10-K Human Capital + EDGAR search |
 | 8 | Executive relations | Claude on 10-K + proxy + EDGAR 8-K search |
 | 9 | Depth of management | Claude on 10-K officers + proxy |
-| 10 | Cost analysis and controls | SG&A/Revenue 5-year trend |
+| 10 | Cost controls | SG&A/Revenue 5-year trend |
 | 11 | Industry characteristics | Claude on 10-K Business section |
-| 12 | Long-term vs short-term outlook | Claude on MD&A + CapEx trend |
-| 13 | Need for equity financing | FCF self-funding + share dilution CAGR |
-| 14 | Management candor with investors | Claude on MD&A + restatement search |
+| 12 | Long-term outlook | Claude on MD&A + CapEx trend |
+| 13 | Equity financing need | FCF self-funding + share dilution CAGR |
+| 14 | Management candor | Claude on MD&A + restatement search |
 | 15 | Management integrity | Claude on proxy + EDGAR investigation search |
 
-Each point returns **strong** (2 pts), **average** (1 pt), or **weak** (0 pts).
-Maximum score: **30 points**.
-
-Verdict thresholds:
-- **BUY / ACCUMULATE** — score ≥ 75% and no critical point (1, 5, 13, 15) is weak
-- **WATCHLIST** — score 50–75%
-- **PASS** — score < 50%
+Each point: **strong** (2 pts) / **average** (1 pt) / **weak** (0 pts). Max: **30 pts**.
+Verdict: **BUY** ≥ 75% with no critical weak point · **WATCHLIST** 50–75% · **PASS** < 50%.
 
 ---
 
 ## Tests
 
-135 unit tests cover all quantitative calculations with boundary conditions and edge cases:
-
 ```bash
 pytest tests/ -v
 ```
 
-| Test file | Tests | Coverage |
-|-----------|-------|----------|
-| `tests/test_quantitative.py` | 68 | `_cagr`, `_linear_slope`, `_score`, points 1, 5, 6, 10, 13 |
-| `tests/test_qafp.py` | 67 | Profitability, cash generation, balance sheet, growth, valuation, decision engine, serialization |
+| File | Tests | Covers |
+|------|-------|--------|
+| `test_quantitative.py` | 68 | Fisher points 1, 5, 6, 10, 13 |
+| `test_qafp.py` | 67 | QAFP quality, valuation, verdicts |
+| `test_canslim.py` | — | CAN SLIM letter scoring |
+| `test_intrinsic_value.py` | 85 | DCF, DDM Gordon, DDM Multi-Period, RIM, Graham Number |
 
 ---
 
 ## Requirements
 
 - Python 3.12+
-- `streamlit`, `anthropic`, `yfinance`, `pandas`, `plotly`, `python-dotenv`
-
-Install all with:
+- `streamlit`, `anthropic`, `yfinance`, `pandas`, `plotly`, `python-dotenv`, `requests`
 
 ```bash
 pip install -r requirements.txt
