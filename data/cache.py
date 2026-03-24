@@ -130,6 +130,38 @@ def load_qafp(ticker: str) -> dict | None:
     return get("qafp:result", ticker)
 
 
+def save_canslim(ticker: str, canslim_dict: dict) -> None:
+    set("canslim:result", ticker, canslim_dict, ttl=60 * 60 * 24 * 30)
+
+
+def load_canslim(ticker: str) -> dict | None:
+    return get("canslim:result", ticker)
+
+
+def save_fundamental(ticker: str, data: dict) -> None:
+    set("fundamental:result", ticker, data, ttl=60 * 60 * 24 * 30)
+
+
+def load_fundamental(ticker: str) -> dict | None:
+    return get("fundamental:result", ticker)
+
+
+def save_intrinsic_value(ticker: str, data: dict) -> None:
+    set("intrinsic_value:result", ticker, data, ttl=60 * 60 * 24 * 30)
+
+
+def load_intrinsic_value(ticker: str) -> dict | None:
+    return get("intrinsic_value:result", ticker)
+
+
+def save_quality_screen(cache_key: str, data: dict) -> None:
+    set(cache_key, "SCREEN_QUALITY", data, ttl=60 * 60 * 24)
+
+
+def load_quality_screen(cache_key: str) -> dict | None:
+    return get(cache_key, "SCREEN_QUALITY")
+
+
 def list_analyzed_tickers() -> list[dict]:
     """
     Return all tickers that have a saved full evaluation summary, newest first.

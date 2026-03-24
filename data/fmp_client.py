@@ -230,6 +230,162 @@ def get_info(ticker: str) -> dict:
     return info
 
 
+def get_quarterly_financials(ticker: str, limit: int = 8) -> dict:
+    """
+    Quarterly income statement and cash flow (newest first).
+    Returns {"income": [...], "cashflow": [...]}.
+    """
+    cached = cache.get("yf:quarterly", ticker)
+    if cached:
+        return cached
+
+    t = _get_ticker(ticker)
+
+    income_map = {
+        "Total Revenue":    "revenue",
+        "Net Income":       "netIncome",
+        "Operating Income": "operatingIncome",
+    }
+    cashflow_map = {
+        "Operating Cash Flow": "operatingCashFlow",
+    }
+
+    income   = _df_to_annual_list(t.quarterly_financials, income_map, limit)
+    cashflow = _df_to_annual_list(t.quarterly_cashflow,   cashflow_map, limit)
+
+    result = {"income": income, "cashflow": cashflow}
+    cache.set("yf:quarterly", ticker, result, ttl=CACHE_TTL_SECONDS)
+    cache.log_request("fmp", "quarterly", ticker)
+    return result
+
+
+def get_price_history(ticker: str, period: str = "2y") -> dict:
+    """
+    Daily OHLCV price history, newest first.
+    Returns {"prices": [...], "volumes": [...]}.
+    """
+    cache_key = f"yf:price_history:{period}"
+    cached = cache.get(cache_key, ticker)
+    if cached:
+        return cached
+
+    t = _get_ticker(ticker)
+    hist = t.history(period=period)
+
+    if hist is None or hist.empty:
+        return {"prices": [], "volumes": []}
+
+    prices  = hist["Close"].tolist()[::-1]   # newest first
+    volumes = hist["Volume"].tolist()[::-1]
+
+    result = {"prices": prices, "volumes": volumes}
+    cache.set(cache_key, ticker, result, ttl=CACHE_TTL_SECONDS)
+    cache.log_request("fmp", "price_history", ticker)
+    return result
+
+
+def get_institutional_holders(ticker: str) -> list[dict]:
+    """
+    List of institutional holders from yfinance.
+    Returns list of dicts with holder name and percentage.
+    """
+    cached = cache.get("yf:inst_holders", ticker)
+    if cached:
+        return cached
+
+    import yfinance as yf
+    t = _get_ticker(ticker)
+    df = t.institutional_holders
+
+    if df is None or df.empty:
+        cache.set("yf:inst_holders", ticker, [], ttl=CACHE_TTL_SECONDS)
+        return []
+
+    result = []
+    for _, row in df.iterrows():
+        result.append({
+            "holder":      str(row.get("Holder", "")),
+            "pctHeld":     _safe_val(row.get("% Out", 0)),
+            "shares":      _safe_val(row.get("Shares", 0)),
+        })
+
+    cache.set("yf:inst_holders", ticker, result, ttl=CACHE_TTL_SECONDS)
+    cache.log_request("fmp", "institutional_holders", ticker)
+    return result
+
+
+def get_spy_history(period: str = "2y") -> dict:
+    """
+    SPY (S&P 500 ETF) daily price history, newest first.
+    Returns {"prices": [...]}.
+    """
+    import yfinance as yf
+    cache_key = f"yf:spy_history:{period}"
+    cached = cache.get(cache_key, "SPY")
+    if cached:
+        return cached
+
+    spy = yf.Ticker("SPY")
+    hist = spy.history(period=period)
+
+    if hist is None or hist.empty:
+        return {"prices": []}
+
+    prices = hist["Close"].tolist()[::-1]   # newest first
+    result = {"prices": prices}
+    cache.set(cache_key, "SPY", result, ttl=CACHE_TTL_SECONDS)
+    return result
+
+
+def get_balance_sheet_extended(ticker: str) -> dict:
+    """
+    Additional balance sheet fields needed for Fundamental Analysis:
+    currentAssets, currentLiabilities, retainedEarnings, interestExpense.
+    Cached separately so existing balance sheet cache is unaffected.
+    """
+    cached = cache.get("yf:bs_extended", ticker)
+    if cached:
+        return cached
+
+    t = _get_ticker(ticker)
+    result = {
+        "currentAssets": 0, "currentLiabilities": 0,
+        "retainedEarnings": 0, "interestExpense": 0,
+    }
+
+    try:
+        bs = t.balance_sheet
+        if bs is not None and not bs.empty:
+            col = bs.columns[0]
+            for field, names in [
+                ("currentAssets",      ["Total Current Assets", "Current Assets"]),
+                ("currentLiabilities", ["Total Current Liabilities Net Minority Interest",
+                                        "Current Liabilities", "Total Current Liabilities"]),
+                ("retainedEarnings",   ["Retained Earnings"]),
+            ]:
+                for name in names:
+                    if name in bs.index:
+                        result[field] = _safe_val(bs.loc[name, col])
+                        break
+    except Exception:
+        pass
+
+    try:
+        inc = t.financials
+        if inc is not None and not inc.empty:
+            col = inc.columns[0]
+            for name in ["Interest Expense", "Interest Expense Non Operating", "Net Non Operating Interest Income Expense"]:
+                if name in inc.index:
+                    result["interestExpense"] = abs(_safe_val(inc.loc[name, col]))
+                    break
+    except Exception:
+        pass
+
+    cache.set("yf:bs_extended", ticker, result, ttl=CACHE_TTL_SECONDS)
+    cache.log_request("fmp", "bs_extended", ticker)
+    return result
+
+
 def request_count_today() -> int:
     """Proxy to cache counter — kept for sidebar display compatibility."""
     from data.cache import request_count_today as _count

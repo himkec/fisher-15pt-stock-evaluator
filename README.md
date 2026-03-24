@@ -1,12 +1,14 @@
 # Fisher 15-Point Stock Evaluator
 
-A practical implementation of Philip Fisher's 15-point checklist for evaluating high-quality growth companies — with real-time data, AI-powered qualitative scoring, and an interactive Streamlit dashboard.
+A practical implementation of Philip Fisher's 15-point checklist for evaluating high-quality growth companies — with real-time data, AI-powered qualitative scoring, a Quality at a Fair Price (QAFP) valuation layer, and an interactive Streamlit dashboard.
 
 ---
 
 ## What it does
 
-Enter any US stock ticker and get a full Fisher 15-point evaluation:
+Enter any US stock ticker and get two complementary evaluations:
+
+### 1. Fisher 15-Point Checklist
 
 | Points | Method | Data source |
 |--------|--------|-------------|
@@ -14,6 +16,30 @@ Enter any US stock ticker and get a full Fisher 15-point evaluation:
 | 2, 3, 4, 7–9, 11–12, 14–15 | Claude AI reads SEC filings | SEC EDGAR (free) + Anthropic Claude API |
 
 Results include a **BUY / WATCHLIST / PASS** verdict, scorecard table, radar chart, per-point rationale, and an AI-generated investment thesis.
+
+### 2. Quality at a Fair Price (QAFP) Analysis
+
+A second evaluation framework that scores the stock on two dimensions:
+
+**Quality score** (0–100) — weighted average of four sub-pillars:
+
+| Sub-pillar | Weight | Key metrics |
+|-----------|--------|-------------|
+| Profitability | 30% | ROE, operating margin, 5yr margin trend |
+| Cash generation | 30% | FCF margin, FCF CAGR, consistency |
+| Balance sheet | 20% | Debt/Equity, Net Debt/EBITDA |
+| Growth | 20% | Revenue CAGR, analyst growth estimate |
+
+**Valuation score** (0–100) — based on P/E, EV/EBITDA, FCF yield, and PEG ratio.
+
+**QAFP verdict:**
+
+| Verdict | Condition |
+|---------|-----------|
+| BUY | Quality ≥ 70 and Valuation ≥ 60 |
+| ACCUMULATE | Quality ≥ 70 and Valuation 40–60 |
+| WATCHLIST | Quality 50–70 |
+| AVOID | Quality < 50 or critical red flags |
 
 Previously analyzed stocks are saved and reloadable from the sidebar at **zero API cost**.
 
@@ -43,8 +69,8 @@ EDGAR_USER_AGENT=FisherEvaluator/1.0 your@email.com
 ```
 
 - **Anthropic API key** — required for qualitative scoring (points 2, 3, 4, 7–9, 11–12, 14–15). Get one at [console.anthropic.com](https://console.anthropic.com).
-- **Yahoo Finance** — free, no key needed (quantitative points).
-- **SEC EDGAR** — free, no key needed. Just set your email in `EDGAR_USER_AGENT` as required by EDGAR's fair-use policy.
+- **Yahoo Finance** — free, no key needed (quantitative points and QAFP metrics).
+- **SEC EDGAR** — free, no key needed. Set your email in `EDGAR_USER_AGENT` as required by EDGAR's fair-use policy.
 
 ### 3. Run
 
@@ -72,11 +98,17 @@ fisher-15pt-stock-evaluator/
 │   ├── quantitative.py        # Rule-based scoring for points 1, 5, 6, 10, 13
 │   ├── qualitative.py         # Claude AI scoring for points 2, 3, 4, 7–9, 11–12, 14–15
 │   ├── prompts.py             # All Claude prompt templates and scoring rubrics
-│   └── aggregator.py          # Score aggregation + BUY/WATCHLIST/PASS verdict
+│   ├── aggregator.py          # Score aggregation + BUY/WATCHLIST/PASS verdict
+│   ├── qafp.py                # QAFP quality + valuation engine
+│   └── qafp_models.py         # QAFPResult + SubScore dataclasses
 ├── ui/
-│   └── components.py          # Streamlit widgets: scorecard, radar chart, expanders
+│   └── components.py          # Streamlit widgets: scorecard, radar, QAFP section
+├── tests/
+│   ├── test_quantitative.py   # 68 tests for Fisher quantitative scoring
+│   └── test_qafp.py           # 67 tests for QAFP engine
 └── docs/
     ├── Philip-Fisher-15-Point-Checklist-Pseudo-Code.md
+    ├── Quality-Analysis.md
     └── Technical-Implementation-Options.md
 ```
 
@@ -84,10 +116,11 @@ fisher-15pt-stock-evaluator/
 
 ```
 User enters ticker
-  → Yahoo Finance   → revenue, margins, cash flows, shares (points 1, 5, 6, 10, 13)
+  → Yahoo Finance   → revenue, margins, cash flows, shares (Fisher points 1, 5, 6, 10, 13)
   → SEC EDGAR       → 10-K text, proxy (DEF 14A), XBRL facts, full-text search hits
   → Claude API      → reads filings, scores qualitative points 2, 3, 4, 7–9, 11–12, 14–15
   → Aggregator      → total score, ratio, BUY / WATCHLIST / PASS verdict
+  → QAFP engine     → quality sub-scores, valuation metrics, BUY/ACCUMULATE/WATCHLIST/AVOID verdict
   → SQLite cache    → saved for 30 days; reload from sidebar at zero cost
 ```
 
@@ -102,6 +135,8 @@ User enters ticker
 | Load from history (sidebar) | 0 | 0 |
 
 All results are stored in a local SQLite database at `~/.fisher_cache/cache.db`.
+
+History panel: previously analyzed stocks appear in the sidebar with verdict icon, score percentage, and analysis date. Click any entry to reload instantly — no API calls, no Claude tokens.
 
 ---
 
@@ -132,6 +167,21 @@ Verdict thresholds:
 - **BUY / ACCUMULATE** — score ≥ 75% and no critical point (1, 5, 13, 15) is weak
 - **WATCHLIST** — score 50–75%
 - **PASS** — score < 50%
+
+---
+
+## Tests
+
+135 unit tests cover all quantitative calculations with boundary conditions and edge cases:
+
+```bash
+pytest tests/ -v
+```
+
+| Test file | Tests | Coverage |
+|-----------|-------|----------|
+| `tests/test_quantitative.py` | 68 | `_cagr`, `_linear_slope`, `_score`, points 1, 5, 6, 10, 13 |
+| `tests/test_qafp.py` | 67 | Profitability, cash generation, balance sheet, growth, valuation, decision engine, serialization |
 
 ---
 
